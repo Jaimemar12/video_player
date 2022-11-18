@@ -17,7 +17,6 @@ void main() {
   runApp(YoutubePlayerDemoApp());
 }
 
-/// Creates [YoutubePlayerDemoApp] widget.
 class YoutubePlayerDemoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
