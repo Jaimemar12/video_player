@@ -1,8 +1,12 @@
-import 'dart:developer';
+import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:youtube_api/youtube_api.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import 'video_list.dart';
@@ -14,16 +18,17 @@ void main() {
       statusBarColor: Colors.black,
     ),
   );
-  runApp(YoutubePlayerDemoApp());
+  runApp(const YoutubePlayerApp());
 }
 
-/// Creates [YoutubePlayerDemoApp] widget.
-class YoutubePlayerDemoApp extends StatelessWidget {
+class YoutubePlayerApp extends StatelessWidget {
+  const YoutubePlayerApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Youtube Player Flutter',
+      title: 'Youtube Player',
       theme: ThemeData(
         primarySwatch: Colors.grey,
         appBarTheme: const AppBarTheme(
@@ -38,37 +43,43 @@ class YoutubePlayerDemoApp extends StatelessWidget {
           color: Colors.black,
         ),
       ),
-      home: MyHomePage(),
+      home: const HomePage(),
     );
   }
 }
 
-/// Homepage
-class MyHomePage extends StatefulWidget {
+class HomePage extends StatefulWidget {
+  const HomePage({Key? key}) : super(key: key);
+
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  HomePageState createState() => HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class HomePageState extends State<HomePage> {
   late YoutubePlayerController _controller;
   late TextEditingController _idController;
   late TextEditingController _seekToController;
-
   late YoutubeMetaData _videoMetaData;
+  final textController = TextEditingController();
+  YoutubeAPI ytApi = YoutubeAPI('AIzaSyDG3GXVmDTO2scXk2hCKkxnQiWnOw0TOA8');
+  List<YouTubeVideo> videoResult = [];
+
+  bool _downloading = false;
+  double progress = 0;
   double _volume = 100;
   bool _muted = false;
   bool _isPlayerReady = false;
 
-  final List<String> _ids = Videos().getIds();
+  List<String> ids = [];
 
   @override
   void initState() {
     super.initState();
     _controller = YoutubePlayerController(
-      initialVideoId: _ids.first,
+      initialVideoId: '',
       flags: const YoutubePlayerFlags(
         mute: false,
-        autoPlay: true,
+        autoPlay: false,
         disableDragSeek: false,
         loop: false,
         isLive: false,
@@ -91,7 +102,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void deactivate() {
-    // Pauses video while navigating to next page.
     _controller.pause();
     super.deactivate();
   }
@@ -107,10 +117,6 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return YoutubePlayerBuilder(
-      onExitFullScreen: () {
-        // The player forces portraitUp after exiting fullscreen. This overrides the behaviour.
-        SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-      },
       player: YoutubePlayer(
         controller: _controller,
         showVideoProgressIndicator: true,
@@ -135,7 +141,7 @@ class _MyHomePageState extends State<MyHomePage> {
               size: 25.0,
             ),
             onPressed: () {
-              log('Settings Tapped!');
+              developer.log('Settings Tapped!');
             },
           ),
         ],
@@ -143,8 +149,7 @@ class _MyHomePageState extends State<MyHomePage> {
           _isPlayerReady = true;
         },
         onEnded: (data) {
-          _controller
-              .load(_ids[(_ids.indexOf(data.videoId) + 1) % _ids.length]);
+          _controller.load(ids[(ids.indexOf(data.videoId) + 1) % ids.length]);
           _showSnackBar('Next Video Started!');
         },
       ),
@@ -158,18 +163,24 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
           title: const Text(
-            'Youtube Player',
+            'Youtube Downloader',
             style: TextStyle(color: Colors.white),
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.video_library, color: Colors.white,),
-              onPressed: () => Navigator.push(
-                context,
-                CupertinoPageRoute(
-                  builder: (context) => VideoList(),
-                ),
+              icon: const Icon(
+                Icons.video_library,
+                color: Colors.white,
               ),
+              onPressed: () {
+                if(_controller.value.isPlaying) deactivate();
+                Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (context) => VideoList(ids),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -201,11 +212,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   _space,
                   TextField(
-                    enabled: _isPlayerReady,
+                    enabled: true,
                     controller: _idController,
                     decoration: InputDecoration(
                       border: InputBorder.none,
-                      hintText: 'Enter youtube \<video id\> or \<link\>',
+                      hintText: 'Enter youtube <link>',
                       fillColor: Colors.black.withAlpha(20),
                       filled: true,
                       hintStyle: const TextStyle(
@@ -221,9 +232,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   _space,
                   Row(
                     children: [
-                      _loadCueButton('LOAD'),
-                      const SizedBox(width: 10.0),
-                      _loadCueButton('CUE'),
+                      _loadButton(),
                     ],
                   ),
                   _space,
@@ -233,10 +242,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       IconButton(
                         icon: const Icon(Icons.skip_previous),
                         onPressed: _isPlayerReady
-                            ? () => _controller.load(_ids[
-                        (_ids.indexOf(_controller.metadata.videoId) -
-                            1) %
-                            _ids.length])
+                            ? () => _controller.load(ids[
+                                (ids.indexOf(_controller.metadata.videoId) -
+                                        1) %
+                                    ids.length])
                             : null,
                       ),
                       IconButton(
@@ -247,24 +256,24 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                         onPressed: _isPlayerReady
                             ? () {
-                          _controller.value.isPlaying
-                              ? _controller.pause()
-                              : _controller.play();
-                          setState(() {});
-                        }
+                                _controller.value.isPlaying
+                                    ? _controller.pause()
+                                    : _controller.play();
+                                setState(() {});
+                              }
                             : null,
                       ),
                       IconButton(
                         icon: Icon(_muted ? Icons.volume_off : Icons.volume_up),
                         onPressed: _isPlayerReady
                             ? () {
-                          _muted
-                              ? _controller.unMute()
-                              : _controller.mute();
-                          setState(() {
-                            _muted = !_muted;
-                          });
-                        }
+                                _muted
+                                    ? _controller.unMute()
+                                    : _controller.mute();
+                                setState(() {
+                                  _muted = !_muted;
+                                });
+                              }
                             : null,
                       ),
                       FullScreenButton(
@@ -274,10 +283,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       IconButton(
                         icon: const Icon(Icons.skip_next),
                         onPressed: _isPlayerReady
-                            ? () => _controller.load(_ids[
-                        (_ids.indexOf(_controller.metadata.videoId) +
-                            1) %
-                            _ids.length])
+                            ? () => _controller.load(ids[
+                                (ids.indexOf(_controller.metadata.videoId) +
+                                        1) %
+                                    ids.length])
                             : null,
                       ),
                     ],
@@ -299,17 +308,34 @@ class _MyHomePageState extends State<MyHomePage> {
                           label: '${(_volume).round()}',
                           onChanged: _isPlayerReady
                               ? (value) {
-                            setState(() {
-                              _volume = value;
-                            });
-                            _controller.setVolume(_volume.round());
-                          }
+                                  setState(() {
+                                    _volume = value;
+                                  });
+                                  _controller.setVolume(_volume.round());
+                                }
                               : null,
                         ),
                       ),
                     ],
                   ),
                   _space,
+                  Row(
+                    children: [
+                      _downloadButton(),
+                    ],
+                  ),
+                  _space,
+                  _downloading
+                      ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.black,
+                      valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                    ),
+                  )
+                      : Container()
                 ],
               ),
             ),
@@ -342,35 +368,40 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget get _space => const SizedBox(height: 10);
 
-  Widget _loadCueButton(String action) {
+  Widget _loadButton() {
     return Expanded(
       child: MaterialButton(
         color: Colors.black,
         onPressed: _isPlayerReady
             ? () {
-          if (_idController.text.isNotEmpty) {
-            var id = YoutubePlayer.convertUrlToId(
-              _idController.text,
-            ) ??
-                '';
-            if (action == 'LOAD') _controller.load(id);
-            if (action == 'CUE') _controller.cue(id);
-            setState(() {
-              Videos().addId(id);
-            });
-            FocusScope.of(context).requestFocus(FocusNode());
-          } else {
-            _showSnackBar('Source can\'t be empty!');
-          }
-        }
+                if (_idController.text.isNotEmpty) {
+                  var id = YoutubePlayer.convertUrlToId(
+                    _idController.text,
+                  ) ??
+                      '';
+                  _controller.load(id);
+                  setState(() {
+                    List<String> currentVideos = ids;
+                    currentVideos.remove(id);
+                    currentVideos.insert(0, id);
+                    ids = currentVideos;
+                  });
+                  FocusScope.of(context).requestFocus(FocusNode());
+
+
+
+                } else {
+                  _showSnackBar('Source can\'t be empty!');
+                }
+              }
             : null,
         disabledColor: Colors.grey,
         disabledTextColor: Colors.black,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14.0),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14.0),
           child: Text(
-            action,
-            style: const TextStyle(
+            'LOAD',
+            style: TextStyle(
               fontSize: 18.0,
               color: Colors.white,
               fontWeight: FontWeight.w300,
@@ -380,6 +411,87 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
     );
+  }
+
+  Widget _downloadButton() {
+    return Expanded(child: MaterialButton(
+      color: Colors.black,
+      onPressed: _isPlayerReady
+          ? () async {
+        if (_idController.text.isNotEmpty) {
+          var permission = await Permission.storage.request();
+          var url = _idController.text.trim();
+          if (permission.isGranted) {
+            setState(() {
+              _downloading = true;
+              progress = 0;
+            });
+            var youtubeExplode = YoutubeExplode();
+            var video = await youtubeExplode.videos.get(url);
+            var id = video.id;
+            var manifest = await youtubeExplode.videos.streamsClient
+                .getManifest(id);
+            var streams = manifest.muxed.withHighestBitrate();
+            var audio = streams;
+            var audioStream =
+            youtubeExplode.videos.streamsClient.get(audio);
+
+            String appDocPath = '/storage/emulated/0/Download';
+            var file = File('$appDocPath/${video.id}.mp4');
+
+            if (file.existsSync()) {
+              file.deleteSync();
+            }
+
+            var output =
+            file.openWrite(mode: FileMode.writeOnlyAppend);
+            var size = audio.size.totalBytes;
+            var count = 0;
+
+            await for (final data in audioStream) {
+              count += data.length;
+
+              double val = (count / size);
+
+              var msg =
+                  '${video.title.substring(0, 20)}... Downloaded to $appDocPath/';
+              for (val; val == 1.0; val++) {
+                if(!mounted) return;
+                _showSnackBar(msg);
+              }
+              setState(() {
+                progress = val;
+              });
+              output.add(data);
+            }
+          } else {
+            await Permission.storage.request();
+          }
+          if(!mounted) return;
+          FocusScope.of(context).requestFocus(FocusNode());
+          setState(() {
+            _downloading = false;
+          });
+        } else {
+          _showSnackBar('Source can\'t be empty!');
+        }
+      }
+          : null,
+      disabledColor: Colors.grey,
+      disabledTextColor: Colors.black,
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 14.0),
+        child: Text(
+          'DOWNLOAD',
+          style: TextStyle(
+            fontSize: 18.0,
+            color: Colors.white,
+            fontWeight: FontWeight.w300,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),);
   }
 
   void _showSnackBar(String message) {
@@ -401,19 +513,5 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
     );
-  }
-}
-
-class Videos {
-  List<String> _videoIds = [
-  'nPt8bK2gbaU',
-  ];
-
-  List<String> getIds(){
-    return _videoIds;
-  }
-
-  void addId(String id){
-    _videoIds.add(id);
   }
 }
