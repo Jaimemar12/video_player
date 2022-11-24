@@ -61,7 +61,7 @@ class HomePageState extends State<HomePage> {
   late TextEditingController _seekToController;
   late YoutubeMetaData _videoMetaData;
   final textController = TextEditingController();
-  YoutubeAPI ytApi = YoutubeAPI('AIzaSyDG3GXVmDTO2scXk2hCKkxnQiWnOw0TOA8');
+  YoutubeAPI ytApi = YoutubeAPI('');
   List<YouTubeVideo> videoResult = [];
 
   bool _downloading = false;
