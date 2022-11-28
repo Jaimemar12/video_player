@@ -64,6 +64,7 @@ class HomePageState extends State<HomePage> {
   YoutubeAPI ytApi = YoutubeAPI('');
   List<YouTubeVideo> videoResult = [];
 
+  late PlayerState _playerState;
   bool _downloading = false;
   double progress = 0;
   double _volume = 100;
@@ -84,17 +85,19 @@ class HomePageState extends State<HomePage> {
         loop: false,
         isLive: false,
         forceHD: false,
-        enableCaption: true,
+        enableCaption: false,
       ),
     )..addListener(listener);
     _idController = TextEditingController();
     _seekToController = TextEditingController();
     _videoMetaData = const YoutubeMetaData();
+    _playerState = PlayerState.unknown;
   }
 
   void listener() {
     if (_isPlayerReady && mounted && !_controller.value.isFullScreen) {
       setState(() {
+        _playerState = _controller.value.playerState;
         _videoMetaData = _controller.metadata;
       });
     }
@@ -173,7 +176,6 @@ class HomePageState extends State<HomePage> {
                 color: Colors.white,
               ),
               onPressed: () {
-                if(_controller.value.isPlaying) deactivate();
                 Navigator.push(
                   context,
                   CupertinoPageRoute(
@@ -212,6 +214,7 @@ class HomePageState extends State<HomePage> {
                   ),
                   _space,
                   TextField(
+                    //fixxxxxxx
                     enabled: true,
                     controller: _idController,
                     decoration: InputDecoration(
@@ -335,7 +338,24 @@ class HomePageState extends State<HomePage> {
                       const AlwaysStoppedAnimation<Color>(Colors.redAccent),
                     ),
                   )
-                      : Container()
+                      : Container(),
+                  _space,
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 800),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20.0),
+                      color: _getStateColor(_playerState),
+                    ),
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      _playerState.toString(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -368,6 +388,27 @@ class HomePageState extends State<HomePage> {
 
   Widget get _space => const SizedBox(height: 10);
 
+  Color _getStateColor(PlayerState state) {
+    switch (state) {
+      case PlayerState.unknown:
+        return Colors.grey[700]!;
+      case PlayerState.unStarted:
+        return Colors.pink;
+      case PlayerState.ended:
+        return Colors.red;
+      case PlayerState.playing:
+        return Colors.blueAccent;
+      case PlayerState.paused:
+        return Colors.orange;
+      case PlayerState.buffering:
+        return Colors.yellow;
+      case PlayerState.cued:
+        return Colors.blue[900]!;
+      default:
+        return Colors.blue;
+    }
+  }
+
   Widget _loadButton() {
     return Expanded(
       child: MaterialButton(
@@ -387,9 +428,6 @@ class HomePageState extends State<HomePage> {
                     ids = currentVideos;
                   });
                   FocusScope.of(context).requestFocus(FocusNode());
-
-
-
                 } else {
                   _showSnackBar('Source can\'t be empty!');
                 }
