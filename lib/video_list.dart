@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class VideoList extends StatefulWidget {
-  List<String> ids = [];
-  VideoList(this.ids, {Key? key}) : super(key: key);
+  final List<String> ids;
+  const VideoList(this.ids, {Key? key}) : super(key: key);
 
   @override
   VideoListState createState() => VideoListState(ids);
 }
 
 class VideoListState extends State<VideoList> {
-  VideoListState(this.ids);
-
   List<String> ids;
+
+  VideoListState(this.ids);
 
   late final List<YoutubePlayerController> _controllers = ids
       .map<YoutubePlayerController>(

@@ -3,50 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_api/youtube_api.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import 'video_list.dart';
-
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.black,
-    ),
-  );
-  runApp(const YoutubePlayerApp());
-}
-
-class YoutubePlayerApp extends StatelessWidget {
-  const YoutubePlayerApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Youtube Player',
-      theme: ThemeData(
-        primarySwatch: Colors.grey,
-        appBarTheme: const AppBarTheme(
-          color: Colors.black,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w300,
-            fontSize: 20,
-          ),
-        ),
-        iconTheme: const IconThemeData(
-          color: Colors.black,
-        ),
-      ),
-      home: const HomePage(),
-    );
-  }
-}
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -61,17 +23,17 @@ class HomePageState extends State<HomePage> {
   late TextEditingController _seekToController;
   late YoutubeMetaData _videoMetaData;
   final textController = TextEditingController();
-  YoutubeAPI ytApi = YoutubeAPI('');
+  YoutubeAPI youtubeAPI =
+      YoutubeAPI('AIzaSyDG3GXVmDTO2scXk2hCKkxnQiWnOw0TOA8', maxResults: 1);
   List<YouTubeVideo> videoResult = [];
 
-  late PlayerState _playerState;
   bool _downloading = false;
   double progress = 0;
   double _volume = 100;
   bool _muted = false;
   bool _isPlayerReady = false;
-
-  List<String> ids = [];
+  late String id;
+  late List<String> ids = [];
 
   @override
   void initState() {
@@ -214,12 +176,11 @@ class HomePageState extends State<HomePage> {
                   ),
                   _space,
                   TextField(
-                    //fixxxxxxx
                     enabled: true,
                     controller: _idController,
                     decoration: InputDecoration(
                       border: InputBorder.none,
-                      hintText: 'Enter youtube <link>',
+                      hintText: 'Enter YouTube Video Tittle or Link',
                       fillColor: Colors.black.withAlpha(20),
                       filled: true,
                       hintStyle: const TextStyle(
@@ -235,7 +196,50 @@ class HomePageState extends State<HomePage> {
                   _space,
                   Row(
                     children: [
-                      _loadButton(),
+                      Expanded(
+                        child: MaterialButton(
+                          color: Colors.black,
+                          onPressed: _isPlayerReady
+                              ? () {
+                                  if (_idController.text.isNotEmpty) {
+                                    if (!_idController.text
+                                        .startsWith('https')) {
+                                      loadVideoId(_idController.text);
+                                    } else {
+                                      id = YoutubePlayer.convertUrlToId(
+                                            _idController.text,
+                                          ) ??
+                                          '';
+                                      setState(() {
+                                        List<String> currentVideos = ids;
+                                        currentVideos.remove(id);
+                                        currentVideos.insert(0, id);
+                                        ids = currentVideos;
+                                      });
+                                    }
+                                    FocusScope.of(context)
+                                        .requestFocus(FocusNode());
+                                  } else {
+                                    _showSnackBar('Source can\'t be empty!');
+                                  }
+                                }
+                              : null,
+                          disabledColor: Colors.grey,
+                          disabledTextColor: Colors.black,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 14.0),
+                            child: Text(
+                              'LOAD',
+                              style: TextStyle(
+                                fontSize: 18.0,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w300,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   _space,
@@ -324,38 +328,24 @@ class HomePageState extends State<HomePage> {
                   _space,
                   Row(
                     children: [
-                      _downloadButton(),
+                      _downloadButton('VIDEO', 'mp4'),
+                      const SizedBox(width: 10.0),
+                      _downloadButton('AUDIO', 'mp3'),
                     ],
                   ),
                   _space,
                   _downloading
                       ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      backgroundColor: Colors.black,
-                      valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.redAccent),
-                    ),
-                  )
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 1, vertical: 1),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: Colors.black,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.redAccent),
+                          ),
+                        )
                       : Container(),
-                  _space,
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 800),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20.0),
-                      color: _getStateColor(_playerState),
-                    ),
-                    padding: const EdgeInsets.all(8.0),
-                    child: Text(
-                      _playerState.toString(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w300,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -388,150 +378,6 @@ class HomePageState extends State<HomePage> {
 
   Widget get _space => const SizedBox(height: 10);
 
-  Color _getStateColor(PlayerState state) {
-    switch (state) {
-      case PlayerState.unknown:
-        return Colors.grey[700]!;
-      case PlayerState.unStarted:
-        return Colors.pink;
-      case PlayerState.ended:
-        return Colors.red;
-      case PlayerState.playing:
-        return Colors.blueAccent;
-      case PlayerState.paused:
-        return Colors.orange;
-      case PlayerState.buffering:
-        return Colors.yellow;
-      case PlayerState.cued:
-        return Colors.blue[900]!;
-      default:
-        return Colors.blue;
-    }
-  }
-
-  Widget _loadButton() {
-    return Expanded(
-      child: MaterialButton(
-        color: Colors.black,
-        onPressed: _isPlayerReady
-            ? () {
-                if (_idController.text.isNotEmpty) {
-                  var id = YoutubePlayer.convertUrlToId(
-                    _idController.text,
-                  ) ??
-                      '';
-                  _controller.load(id);
-                  setState(() {
-                    List<String> currentVideos = ids;
-                    currentVideos.remove(id);
-                    currentVideos.insert(0, id);
-                    ids = currentVideos;
-                  });
-                  FocusScope.of(context).requestFocus(FocusNode());
-                } else {
-                  _showSnackBar('Source can\'t be empty!');
-                }
-              }
-            : null,
-        disabledColor: Colors.grey,
-        disabledTextColor: Colors.black,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 14.0),
-          child: Text(
-            'LOAD',
-            style: TextStyle(
-              fontSize: 18.0,
-              color: Colors.white,
-              fontWeight: FontWeight.w300,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _downloadButton() {
-    return Expanded(child: MaterialButton(
-      color: Colors.black,
-      onPressed: _isPlayerReady
-          ? () async {
-        if (_idController.text.isNotEmpty) {
-          var permission = await Permission.storage.request();
-          var url = _idController.text.trim();
-          if (permission.isGranted) {
-            setState(() {
-              _downloading = true;
-              progress = 0;
-            });
-            var youtubeExplode = YoutubeExplode();
-            var video = await youtubeExplode.videos.get(url);
-            var id = video.id;
-            var manifest = await youtubeExplode.videos.streamsClient
-                .getManifest(id);
-            var streams = manifest.muxed.withHighestBitrate();
-            var audio = streams;
-            var audioStream =
-            youtubeExplode.videos.streamsClient.get(audio);
-
-            String appDocPath = '/storage/emulated/0/Download';
-            var file = File('$appDocPath/${video.id}.mp4');
-
-            if (file.existsSync()) {
-              file.deleteSync();
-            }
-
-            var output =
-            file.openWrite(mode: FileMode.writeOnlyAppend);
-            var size = audio.size.totalBytes;
-            var count = 0;
-
-            await for (final data in audioStream) {
-              count += data.length;
-
-              double val = (count / size);
-
-              var msg =
-                  '${video.title.substring(0, 20)}... Downloaded to $appDocPath/';
-              for (val; val == 1.0; val++) {
-                if(!mounted) return;
-                _showSnackBar(msg);
-              }
-              setState(() {
-                progress = val;
-              });
-              output.add(data);
-            }
-          } else {
-            await Permission.storage.request();
-          }
-          if(!mounted) return;
-          FocusScope.of(context).requestFocus(FocusNode());
-          setState(() {
-            _downloading = false;
-          });
-        } else {
-          _showSnackBar('Source can\'t be empty!');
-        }
-      }
-          : null,
-      disabledColor: Colors.grey,
-      disabledTextColor: Colors.black,
-      child: const Padding(
-        padding: EdgeInsets.symmetric(vertical: 14.0),
-        child: Text(
-          'DOWNLOAD',
-          style: TextStyle(
-            fontSize: 18.0,
-            color: Colors.white,
-            fontWeight: FontWeight.w300,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    ),);
-  }
-
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -548,6 +394,149 @@ class HomePageState extends State<HomePage> {
         elevation: 1.0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(50.0),
+        ),
+      ),
+    );
+  }
+
+  void loadVideoId(String text) async {
+    videoResult = await youtubeAPI.search(_idController.text,
+        order: 'relevance', videoDuration: 'any', type: 'video');
+    setState(() {
+      id = videoResult[0].id.toString();
+      List<String> currentVideos = ids;
+      currentVideos.remove(id);
+      currentVideos.insert(0, id);
+      ids = currentVideos;
+    });
+    _controller.load(id);
+  }
+
+  Widget _downloadButton(String tittle, String type) {
+    return Expanded(
+      child: MaterialButton(
+        color: Colors.black,
+        onPressed: _isPlayerReady
+            ? () async {
+                if (_idController.text.isNotEmpty) {
+                  var permission = await Permission.storage.request();
+
+                  if (permission.isGranted) {
+                    setState(() {
+                      _downloading = true;
+                      progress = 0;
+                    });
+
+                    var youtubeExplode = YoutubeExplode();
+                    String idToDownload;
+                    String videoImageUrl = '';
+                    dynamic video;
+
+                    if (!_idController.text.startsWith('https')) {
+                      videoResult = await youtubeAPI.search(_idController.text,
+                          order: 'relevance',
+                          videoDuration: 'any',
+                          type: 'video');
+                      video = videoResult[0];
+                      videoImageUrl = video.thumbnail.medium.url.toString();
+                      idToDownload = video.id.toString();
+                    } else {
+                      var url = _idController.text.trim();
+                      video = await youtubeExplode.videos.get(url);
+                      videoImageUrl = video.thumbnails.standardResUrl;
+                      idToDownload = video.id.toString();
+                    }
+                    var manifest = await youtubeExplode.videos.streamsClient
+                        .getManifest(idToDownload);
+                    var streams = manifest.muxed.withHighestBitrate();
+                    var audio = streams;
+                    var audioStream =
+                        youtubeExplode.videos.streamsClient.get(audio);
+
+                    String appDocPath = '/storage/emulated/0/Download';
+                    var file = File('$appDocPath/${video.id}.$type');
+
+                    if (file.existsSync()) {
+                      file.deleteSync();
+                    }
+
+                    var output = file.openWrite(mode: FileMode.writeOnlyAppend);
+                    var size = audio.size.totalBytes;
+                    var count = 0;
+
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            Image.network(
+                              videoImageUrl,
+                              scale: 2,
+                            ),
+                            const SizedBox(width: 10.0),
+                            Flexible(
+                              child: Text(
+                                'Download Has Started:\n\n${video.title}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w300,
+                                  fontSize: 14.0,
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
+                        backgroundColor: Colors.black,
+                        behavior: SnackBarBehavior.floating,
+                        elevation: 1.0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(50.0),
+                        ),
+                      ),
+                    );
+                    await for (final data in audioStream) {
+                      count += data.length;
+
+                      double val = (count / size);
+
+                      var msg =
+                          '${video.title.substring(0, 20)}... Downloaded to $appDocPath/';
+                      for (val; val == 1.0; val++) {
+                        if (!mounted) return;
+                        _showSnackBar(msg);
+                      }
+                      setState(() {
+                        progress = val;
+                      });
+                      output.add(data);
+                    }
+                    youtubeExplode.close();
+                  } else {
+                    await Permission.storage.request();
+                  }
+                  if (!mounted) return;
+                  FocusScope.of(context).requestFocus(FocusNode());
+                  setState(() {
+                    _downloading = false;
+                  });
+                } else {
+                  _showSnackBar('Source can\'t be empty!');
+                }
+              }
+            : null,
+        disabledColor: Colors.grey,
+        disabledTextColor: Colors.black,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14.0),
+          child: Text(
+            'DOWNLOAD $tittle',
+            style: const TextStyle(
+              fontSize: 15.0,
+              color: Colors.white,
+              fontWeight: FontWeight.w300,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
       ),
     );
